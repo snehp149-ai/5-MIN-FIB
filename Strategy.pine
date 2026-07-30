@@ -302,7 +302,73 @@ showCurrentTF =
      (is4H and showOn4H) or
      (isDaily and showOnDaily)
 
+// ============================================================================
+// 9. STRATEGY SETTINGS
+// ============================================================================
 
+groupStrategy = "8. Strategy"
+
+//-----------------------------
+// Date Filter
+//-----------------------------
+
+enableDateFilter = input.bool(true, "Enable Date Filter", group=groupStrategy)
+
+startDate = input.time(
+     timestamp("2025-01-01 00:00"),
+     "Start Date",
+     group=groupStrategy)
+
+endDate = input.time(
+     timestamp("2035-12-31 23:59"),
+     "End Date",
+     group=groupStrategy)
+
+inDateRange =
+     not enableDateFilter or
+     (time >= startDate and time <= endDate)
+
+
+//-----------------------------
+// Session Filter
+//-----------------------------
+
+tradeLondon =
+     input.bool(
+          true,
+          "Trade London Session",
+          group=groupStrategy)
+
+tradeNewYork =
+     input.bool(
+          true,
+          "Trade New York Session",
+          group=groupStrategy)
+
+londonSession =
+     not na(
+          time(
+               timeframe.period,
+               "0800-1700"))
+
+newYorkSession =
+     not na(
+          time(
+               timeframe.period,
+               "1300-2200"))
+
+sessionAllowed =
+     (tradeLondon and londonSession) or
+     (tradeNewYork and newYorkSession)
+
+
+//-----------------------------
+// Master Trade Filter
+//-----------------------------
+
+allowTrading =
+     inDateRange and
+     sessionAllowed
 // ============================================================================
 // 9. FIXED 5-MINUTE STRUCTURE ENGINE
 // ============================================================================
