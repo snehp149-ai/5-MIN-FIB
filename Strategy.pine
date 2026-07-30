@@ -1,1 +1,88 @@
+//@version=6
+strategy(
+     title = "5 MIN FIB PRO Strategy",
+     shorttitle = "5MFIB PRO",
+     overlay = true,
+     initial_capital = 100000,
+     pyramiding = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.0,
+     process_orders_on_close = true,
+     calc_on_every_tick = true,
+     max_boxes_count = 500,
+     max_labels_count = 500,
+     max_lines_count = 500)
 
+//====================================================
+// BUILD INFORMATION
+//====================================================
+
+var string BUILD = "Build 001"
+
+//====================================================
+// BACKTEST DATE FILTER
+//====================================================
+
+startDate = input.time(timestamp("2025-01-01"), "Start Date")
+endDate   = input.time(timestamp("2030-12-31"), "End Date")
+
+inDateRange = time >= startDate and time <= endDate
+
+//====================================================
+// SESSION FILTER
+//====================================================
+
+tradeLondon = input.bool(true, "London Session")
+tradeNewYork = input.bool(true, "New York Session")
+
+londonSession = not na(time(timeframe.period, "0800-1700"))
+newYorkSession = not na(time(timeframe.period, "1300-2200"))
+
+sessionAllowed =
+     (tradeLondon and londonSession) or
+     (tradeNewYork and newYorkSession)
+
+//====================================================
+// RISK SETTINGS
+//====================================================
+
+riskReward = input.float(2.0, "Risk Reward", step=0.25)
+
+slBufferPips = input.float(5.0, "SL Buffer (Pips)")
+
+maxEntryDistance = input.float(
+     35.0,
+     "Maximum Entry Distance (Pips)"
+)
+
+//====================================================
+// FUTURE MODULE FLAGS
+//====================================================
+
+var bool structureReady = false
+var bool zoneManagerReady = false
+var bool confirmationReady = false
+var bool executionReady = false
+
+//====================================================
+// PLACEHOLDER
+//====================================================
+
+bgcolor(
+     inDateRange and sessionAllowed ?
+     color.new(color.green, 95) :
+     color.new(color.red, 95)
+)
+
+//====================================================
+// BUILD LABEL
+//====================================================
+
+if barstate.islast
+    label.new(
+         bar_index,
+         high,
+         BUILD,
+         style=label.style_label_down,
+         color=color.blue,
+         textcolor=color.white)
