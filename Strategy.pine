@@ -1,88 +1,1124 @@
 //@version=6
 strategy(
-     title = "5 MIN FIB PRO Strategy",
-     shorttitle = "5MFIB PRO",
-     overlay = true,
-     initial_capital = 100000,
-     pyramiding = 0,
-     commission_type = strategy.commission.percent,
-     commission_value = 0.0,
-     process_orders_on_close = true,
-     calc_on_every_tick = true,
-     max_boxes_count = 500,
-     max_labels_count = 500,
-     max_lines_count = 500)
+     "5 MIN FIB PRO Strategy",
+     overlay=true,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=true,
+     initial_capital=100000,
+     max_boxes_count=500,
+     max_labels_count=500)
+// ============================================================================
+//                         5 MIN FIB - V2.3
+// ============================================================================
+//
+// SOURCE TIMEFRAME: ALWAYS 5 MINUTES
+//
+// BULLISH:
+// - 3+ consecutive bullish candles
+// - Lowest wick = Structure Low
+// - Highest wick = Structure High
+// - First bearish candle ends sequence
+// - If first bearish candle touches potential 0.500-0.618 zone -> NO ZONE
+// - Future wick touch -> TAPPED
+// - Future close below 0.618 -> BREACHED
+//
+// BEARISH:
+// - 3+ consecutive bearish candles
+// - Highest wick = Structure High
+// - Lowest wick = Structure Low
+// - First bullish candle ends sequence
+// - If first bullish candle touches potential 0.500-0.618 zone -> NO ZONE
+// - Future wick touch -> TAPPED
+// - Future close above 0.618 -> BREACHED
+//
+// ============================================================================
 
-//====================================================
-// BUILD INFORMATION
-//====================================================
 
-var string BUILD = "Build 001"
+// ============================================================================
+// 1. STRUCTURE SETTINGS
+// ============================================================================
 
-//====================================================
-// BACKTEST DATE FILTER
-//====================================================
+groupStructure = "1. Structure"
 
-startDate = input.time(timestamp("2025-01-01"), "Start Date")
-endDate   = input.time(timestamp("2030-12-31"), "End Date")
+minBullCandles = input.int(
+     3,
+     "Minimum Bullish Candles",
+     minval=3,
+     group=groupStructure)
 
-inDateRange = time >= startDate and time <= endDate
+minBearCandles = input.int(
+     3,
+     "Minimum Bearish Candles",
+     minval=3,
+     group=groupStructure)
 
-//====================================================
-// SESSION FILTER
-//====================================================
 
-tradeLondon = input.bool(true, "London Session")
-tradeNewYork = input.bool(true, "New York Session")
+// ============================================================================
+// 2. HISTORY
+// ============================================================================
 
-londonSession = not na(time(timeframe.period, "0800-1700"))
-newYorkSession = not na(time(timeframe.period, "1300-2200"))
+groupHistory = "2. History / Manual Backtesting"
 
-sessionAllowed =
-     (tradeLondon and londonSession) or
-     (tradeNewYork and newYorkSession)
+lookbackDays = input.int(
+     2,
+     "Lookback Days",
+     minval=1,
+     maxval=365,
+     group=groupHistory)
 
-//====================================================
-// RISK SETTINGS
-//====================================================
 
-riskReward = input.float(2.0, "Risk Reward", step=0.25)
+// ============================================================================
+// 3. DISPLAY
+// ============================================================================
 
-slBufferPips = input.float(5.0, "SL Buffer (Pips)")
+groupDisplay = "3. Display"
 
-maxEntryDistance = input.float(
-     35.0,
-     "Maximum Entry Distance (Pips)"
-)
+showBullishZones = input.bool(
+     true,
+     "Show Bullish Zones",
+     group=groupDisplay)
 
-//====================================================
-// FUTURE MODULE FLAGS
-//====================================================
+showBearishZones = input.bool(
+     true,
+     "Show Bearish Zones",
+     group=groupDisplay)
 
-var bool structureReady = false
-var bool zoneManagerReady = false
-var bool confirmationReady = false
-var bool executionReady = false
+showBullStructurePoints = input.bool(
+     true,
+     "Show Bullish Structure Points",
+     group=groupDisplay)
 
-//====================================================
-// PLACEHOLDER
-//====================================================
+showBearStructurePoints = input.bool(
+     true,
+     "Show Bearish Structure Points",
+     group=groupDisplay)
 
-bgcolor(
-     inDateRange and sessionAllowed ?
-     color.new(color.green, 95) :
-     color.new(color.red, 95)
-)
+showBreachedZones = input.bool(
+     true,
+     "Show Breached Zones",
+     tooltip="ON = breached zones stop and fade. OFF = breached zones disappear.",
+     group=groupDisplay)
 
-//====================================================
-// BUILD LABEL
-//====================================================
 
-if barstate.islast
-    label.new(
-         bar_index,
-         high,
-         BUILD,
-         style=label.style_label_down,
-         color=color.blue,
-         textcolor=color.white)
+// ============================================================================
+// 4. BUY RECTANGLE CUSTOMIZATION
+// ============================================================================
+
+groupBuy = "4. BUY Rectangle Customization"
+
+buyColor = input.color(
+     color.green,
+     "Zone Color",
+     group=groupBuy)
+
+buyActiveTransparency = input.int(
+     85,
+     "ACTIVE Transparency",
+     minval=0,
+     maxval=100,
+     group=groupBuy)
+
+buyTappedTransparency = input.int(
+     72,
+     "TAPPED Transparency",
+     minval=0,
+     maxval=100,
+     group=groupBuy)
+
+buyBorderColor = input.color(
+     color.green,
+     "Border Color",
+     group=groupBuy)
+
+buyBorderTransparency = input.int(
+     30,
+     "Border Transparency",
+     minval=0,
+     maxval=100,
+     group=groupBuy)
+
+buyBorderWidth = input.int(
+     1,
+     "Border Thickness",
+     minval=0,
+     maxval=4,
+     group=groupBuy)
+
+
+// ============================================================================
+// 5. SELL RECTANGLE CUSTOMIZATION
+// ============================================================================
+
+groupSell = "5. SELL Rectangle Customization"
+
+sellColor = input.color(
+     color.red,
+     "Zone Color",
+     group=groupSell)
+
+sellActiveTransparency = input.int(
+     85,
+     "ACTIVE Transparency",
+     minval=0,
+     maxval=100,
+     group=groupSell)
+
+sellTappedTransparency = input.int(
+     72,
+     "TAPPED Transparency",
+     minval=0,
+     maxval=100,
+     group=groupSell)
+
+sellBorderColor = input.color(
+     color.red,
+     "Border Color",
+     group=groupSell)
+
+sellBorderTransparency = input.int(
+     30,
+     "Border Transparency",
+     minval=0,
+     maxval=100,
+     group=groupSell)
+
+sellBorderWidth = input.int(
+     1,
+     "Border Thickness",
+     minval=0,
+     maxval=4,
+     group=groupSell)
+
+
+// ============================================================================
+// 6. BREACHED APPEARANCE
+// ============================================================================
+
+groupBreached = "6. Breached Zone Appearance"
+
+breachedTransparency = input.int(
+     94,
+     "Breached Transparency",
+     minval=0,
+     maxval=100,
+     group=groupBreached)
+
+
+// ============================================================================
+// 7. TIMEFRAME VISIBILITY
+// ============================================================================
+//
+// DEFAULT = ONLY 5 MINUTE
+//
+// ============================================================================
+
+groupVisibility = "7. Timeframe Visibility"
+
+showOn1m = input.bool(
+     false,
+     "Show on 1 Minute",
+     group=groupVisibility)
+
+showOn3m = input.bool(
+     false,
+     "Show on 3 Minute",
+     group=groupVisibility)
+
+showOn5m = input.bool(
+     true,
+     "Show on 5 Minute",
+     group=groupVisibility)
+
+showOn15m = input.bool(
+     false,
+     "Show on 15 Minute",
+     group=groupVisibility)
+
+showOn30m = input.bool(
+     false,
+     "Show on 30 Minute",
+     group=groupVisibility)
+
+showOn1H = input.bool(
+     false,
+     "Show on 1 Hour",
+     group=groupVisibility)
+
+showOn4H = input.bool(
+     false,
+     "Show on 4 Hour",
+     group=groupVisibility)
+
+showOnDaily = input.bool(
+     false,
+     "Show on Daily",
+     group=groupVisibility)
+
+
+// ============================================================================
+// 8. CURRENT CHART TIMEFRAME
+// ============================================================================
+
+is1m =
+     timeframe.isminutes and
+     timeframe.multiplier == 1
+
+is3m =
+     timeframe.isminutes and
+     timeframe.multiplier == 3
+
+is5m =
+     timeframe.isminutes and
+     timeframe.multiplier == 5
+
+is15m =
+     timeframe.isminutes and
+     timeframe.multiplier == 15
+
+is30m =
+     timeframe.isminutes and
+     timeframe.multiplier == 30
+
+is1H =
+     timeframe.isminutes and
+     timeframe.multiplier == 60
+
+is4H =
+     timeframe.isminutes and
+     timeframe.multiplier == 240
+
+isDaily =
+     timeframe.isdaily
+
+
+showCurrentTF =
+     (is1m and showOn1m) or
+     (is3m and showOn3m) or
+     (is5m and showOn5m) or
+     (is15m and showOn15m) or
+     (is30m and showOn30m) or
+     (is1H and showOn1H) or
+     (is4H and showOn4H) or
+     (isDaily and showOnDaily)
+
+
+// ============================================================================
+// 9. FIXED 5-MINUTE STRUCTURE ENGINE
+// ============================================================================
+
+fibEngine() =>
+
+    // ------------------------------------------------------------------------
+    // BULLISH STRUCTURE STORAGE
+    // ------------------------------------------------------------------------
+
+    var int bullCount = 0
+
+    var float bullLow = na
+    var float bullHigh = na
+
+    var int bullLowTime = na
+    var int bullHighTime = na
+
+
+    // ------------------------------------------------------------------------
+    // BEARISH STRUCTURE STORAGE
+    // ------------------------------------------------------------------------
+
+    var int bearCount = 0
+
+    var float bearHigh = na
+    var float bearLow = na
+
+    var int bearHighTime = na
+    var int bearLowTime = na
+
+
+    // ------------------------------------------------------------------------
+    // OUTPUT VARIABLES
+    // ------------------------------------------------------------------------
+
+    bool bullEvent = false
+    bool bearEvent = false
+
+    float bullOut50 = na
+    float bullOut618 = na
+
+    float bearOut50 = na
+    float bearOut618 = na
+
+    int bullOutLowTime = na
+    int bullOutHighTime = na
+
+    int bearOutHighTime = na
+    int bearOutLowTime = na
+
+
+    // ------------------------------------------------------------------------
+    // CANDLE DEFINITIONS
+    // ------------------------------------------------------------------------
+
+    bullish = close > open
+    bearish = close < open
+
+
+    // ========================================================================
+    // BULLISH STRUCTURE
+    // ========================================================================
+
+    if bullish
+
+        if bullCount == 0
+
+            bullLow := low
+            bullHigh := high
+
+            bullLowTime := time
+            bullHighTime := time
+
+        else
+
+            // Lowest wick in bullish sequence
+
+            if low < bullLow
+
+                bullLow := low
+                bullLowTime := time
+
+
+            // Highest wick in bullish sequence
+
+            if high > bullHigh
+
+                bullHigh := high
+                bullHighTime := time
+
+
+        bullCount += 1
+
+
+    // ------------------------------------------------------------------------
+    // FIRST BEARISH CANDLE
+    // ------------------------------------------------------------------------
+
+    else if bearish
+
+        if bullCount >= minBullCandles
+
+            bullRange =
+                 bullHigh - bullLow
+
+
+            potentialBull50 =
+                 bullHigh -
+                 bullRange * 0.500
+
+
+            potentialBull618 =
+                 bullHigh -
+                 bullRange * 0.618
+
+
+            // ----------------------------------------------------------------
+            // INVALIDATION RULE
+            //
+            // First bearish candle touching potential BUY zone
+            // with ANY part of candle = NO ZONE.
+            // ----------------------------------------------------------------
+
+            terminatingTouchesBull =
+                 low <= potentialBull50 and
+                 high >= potentialBull618
+
+
+            if not terminatingTouchesBull
+
+                bullEvent := true
+
+                bullOut50 := potentialBull50
+                bullOut618 := potentialBull618
+
+                bullOutLowTime := bullLowTime
+                bullOutHighTime := bullHighTime
+
+
+        // RESET BULLISH STRUCTURE
+
+        bullCount := 0
+
+        bullLow := na
+        bullHigh := na
+
+        bullLowTime := na
+        bullHighTime := na
+
+
+    // ========================================================================
+    // BEARISH STRUCTURE
+    // ========================================================================
+
+    if bearish
+
+        if bearCount == 0
+
+            bearHigh := high
+            bearLow := low
+
+            bearHighTime := time
+            bearLowTime := time
+
+        else
+
+            // Highest wick in bearish sequence
+
+            if high > bearHigh
+
+                bearHigh := high
+                bearHighTime := time
+
+
+            // Lowest wick in bearish sequence
+
+            if low < bearLow
+
+                bearLow := low
+                bearLowTime := time
+
+
+        bearCount += 1
+
+
+    // ------------------------------------------------------------------------
+    // FIRST BULLISH CANDLE
+    // ------------------------------------------------------------------------
+
+    else if bullish
+
+        if bearCount >= minBearCandles
+
+            bearRange =
+                 bearHigh - bearLow
+
+
+            potentialBear50 =
+                 bearLow +
+                 bearRange * 0.500
+
+
+            potentialBear618 =
+                 bearLow +
+                 bearRange * 0.618
+
+
+            // ----------------------------------------------------------------
+            // INVALIDATION RULE
+            //
+            // First bullish candle touching potential SELL zone
+            // with ANY part of candle = NO ZONE.
+            // ----------------------------------------------------------------
+
+            terminatingTouchesBear =
+                 high >= potentialBear50 and
+                 low <= potentialBear618
+
+
+            if not terminatingTouchesBear
+
+                bearEvent := true
+
+                bearOut50 := potentialBear50
+                bearOut618 := potentialBear618
+
+                bearOutHighTime := bearHighTime
+                bearOutLowTime := bearLowTime
+
+
+        // RESET BEARISH STRUCTURE
+
+        bearCount := 0
+
+        bearHigh := na
+        bearLow := na
+
+        bearHighTime := na
+        bearLowTime := na
+
+
+    // ========================================================================
+    // RETURN
+    // ============================================================================
+    //
+    // Kept on ONE LINE to prevent Pine tuple continuation errors.
+    //
+    // ========================================================================
+
+    [bullEvent, bullOut50, bullOut618, bullOutLowTime, bullOutHighTime, bearEvent, bearOut50, bearOut618, bearOutHighTime, bearOutLowTime, close, high, low, time]
+
+
+// ============================================================================
+// 10. RUN ENGINE ON 5-MINUTE DATA
+// ============================================================================
+//
+// This is also intentionally kept as a single-line tuple assignment.
+//
+// ============================================================================
+
+[bullEvent5, bull50_5, bull618_5, bullLowTime5, bullHighTime5, bearEvent5, bear50_5, bear618_5, bearHighTime5, bearLowTime5, close5, high5, low5, time5] = request.security(syminfo.tickerid, "5", fibEngine(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+
+// ============================================================================
+// 11. HISTORY FILTER
+// ============================================================================
+
+lookbackMilliseconds =
+     lookbackDays *
+     24 *
+     60 *
+     60 *
+     1000
+
+
+lookbackStart =
+     timenow -
+     lookbackMilliseconds
+
+
+insideLookback =
+     time5 >= lookbackStart
+
+
+// ============================================================================
+// 12. BULLISH STORAGE
+// ============================================================================
+
+var box[] bullBoxes =
+     array.new_box()
+
+var float[] bull50Array =
+     array.new_float()
+
+var float[] bull618Array =
+     array.new_float()
+
+
+// STATE:
+// 0 = ACTIVE
+// 1 = TAPPED
+// 2 = BREACHED
+
+var int[] bullStates =
+     array.new_int()
+
+var int[] bullCreatedTimes =
+     array.new_int()
+
+
+// ============================================================================
+// 13. BEARISH STORAGE
+// ============================================================================
+
+var box[] bearBoxes =
+     array.new_box()
+
+var float[] bear50Array =
+     array.new_float()
+
+var float[] bear618Array =
+     array.new_float()
+
+
+// STATE:
+// 0 = ACTIVE
+// 1 = TAPPED
+// 2 = BREACHED
+
+var int[] bearStates =
+     array.new_int()
+
+var int[] bearCreatedTimes =
+     array.new_int()
+
+
+// ============================================================================
+// 14. PREVENT DUPLICATE STRUCTURES
+// ============================================================================
+
+var int lastBullEventTime = na
+var int lastBearEventTime = na
+
+
+newBullEvent =
+     bullEvent5 and
+     insideLookback and
+     (
+         na(lastBullEventTime) or
+         time5 != lastBullEventTime
+     )
+
+
+newBearEvent =
+     bearEvent5 and
+     insideLookback and
+     (
+         na(lastBearEventTime) or
+         time5 != lastBearEventTime
+     )
+
+
+// ============================================================================
+// 15. CREATE BULLISH ZONE
+// ============================================================================
+
+if newBullEvent
+
+    lastBullEventTime := time5
+
+
+    if showCurrentTF and
+         showBullishZones
+
+        newBullBox = box.new(
+             left=bullLowTime5,
+             top=bull50_5,
+             right=time5,
+             bottom=bull618_5,
+             xloc=xloc.bar_time,
+             extend=extend.right,
+             border_color=color.new(
+                 buyBorderColor,
+                 buyBorderTransparency),
+             border_width=buyBorderWidth,
+             bgcolor=color.new(
+                 buyColor,
+                 buyActiveTransparency))
+
+
+        array.push(
+             bullBoxes,
+             newBullBox)
+
+
+        array.push(
+             bull50Array,
+             bull50_5)
+
+
+        array.push(
+             bull618Array,
+             bull618_5)
+
+
+        array.push(
+             bullStates,
+             0)
+
+
+        array.push(
+             bullCreatedTimes,
+             time5)
+
+
+        // --------------------------------------------------------------------
+        // STRUCTURE POINTS
+        // --------------------------------------------------------------------
+
+        if showBullStructurePoints
+
+            label.new(
+                 x=bullLowTime5,
+                 y=bull618_5,
+                 text="▲",
+                 xloc=xloc.bar_time,
+                 style=label.style_none,
+                 textcolor=buyBorderColor,
+                 size=size.tiny)
+
+
+            label.new(
+                 x=bullHighTime5,
+                 y=bull50_5,
+                 text="▼",
+                 xloc=xloc.bar_time,
+                 style=label.style_none,
+                 textcolor=buyBorderColor,
+                 size=size.tiny)
+
+
+// ============================================================================
+// 16. CREATE BEARISH ZONE
+// ============================================================================
+
+if newBearEvent
+
+    lastBearEventTime := time5
+
+
+    if showCurrentTF and
+         showBearishZones
+
+        newBearBox = box.new(
+             left=bearHighTime5,
+             top=bear618_5,
+             right=time5,
+             bottom=bear50_5,
+             xloc=xloc.bar_time,
+             extend=extend.right,
+             border_color=color.new(
+                 sellBorderColor,
+                 sellBorderTransparency),
+             border_width=sellBorderWidth,
+             bgcolor=color.new(
+                 sellColor,
+                 sellActiveTransparency))
+
+
+        array.push(
+             bearBoxes,
+             newBearBox)
+
+
+        array.push(
+             bear50Array,
+             bear50_5)
+
+
+        array.push(
+             bear618Array,
+             bear618_5)
+
+
+        array.push(
+             bearStates,
+             0)
+
+
+        array.push(
+             bearCreatedTimes,
+             time5)
+
+
+        // --------------------------------------------------------------------
+        // STRUCTURE POINTS
+        // --------------------------------------------------------------------
+
+        if showBearStructurePoints
+
+            label.new(
+                 x=bearHighTime5,
+                 y=bear618_5,
+                 text="▼",
+                 xloc=xloc.bar_time,
+                 style=label.style_none,
+                 textcolor=sellBorderColor,
+                 size=size.tiny)
+
+
+            label.new(
+                 x=bearLowTime5,
+                 y=bear50_5,
+                 text="▲",
+                 xloc=xloc.bar_time,
+                 style=label.style_none,
+                 textcolor=sellBorderColor,
+                 size=size.tiny)
+
+
+// ============================================================================
+// 17. BULLISH ZONE LIFECYCLE
+// ============================================================================
+//
+// ACTIVE:
+// Valid zone exists and has not been touched.
+//
+// TAPPED:
+// A FUTURE 5m candle wick touches the zone.
+//
+// BREACHED:
+// A FUTURE 5m candle CLOSES below 0.618.
+//
+// ============================================================================
+
+if array.size(bullBoxes) > 0
+
+    for i = 0 to array.size(bullBoxes) - 1
+
+        bullState =
+             array.get(
+                 bullStates,
+                 i)
+
+
+        bullCreatedTime =
+             array.get(
+                 bullCreatedTimes,
+                 i)
+
+
+        // --------------------------------------------------------------------
+        // ONLY FUTURE 5M CANDLES
+        // --------------------------------------------------------------------
+
+        if bullState != 2 and
+             time5 > bullCreatedTime
+
+            zone50 =
+                 array.get(
+                     bull50Array,
+                     i)
+
+
+            zone618 =
+                 array.get(
+                     bull618Array,
+                     i)
+
+
+            currentBox =
+                 array.get(
+                     bullBoxes,
+                     i)
+
+
+            // ----------------------------------------------------------------
+            // BREACH CHECK FIRST
+            // ----------------------------------------------------------------
+
+            bullBreached =
+                 close5 < zone618
+
+
+            if bullBreached
+
+                array.set(
+                     bullStates,
+                     i,
+                     2)
+
+
+                // Stop extending rectangle
+
+                box.set_extend(
+                     currentBox,
+                     extend.none)
+
+
+                box.set_right(
+                     currentBox,
+                     time5)
+
+
+                // ------------------------------------------------------------
+                // BREACHED APPEARANCE
+                // ------------------------------------------------------------
+
+                if showBreachedZones
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             buyColor,
+                             breachedTransparency))
+
+
+                    box.set_border_color(
+                         currentBox,
+                         color.new(
+                             buyBorderColor,
+                             85))
+
+
+                else
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             buyColor,
+                             100))
+
+
+                    box.set_border_color(
+                         currentBox,
+                         color.new(
+                             buyBorderColor,
+                             100))
+
+
+            else
+
+                // ------------------------------------------------------------
+                // TAP CHECK
+                //
+                // WICK IS ENOUGH.
+                // ------------------------------------------------------------
+
+                bullTapped =
+                     low5 <= zone50 and
+                     high5 >= zone618
+
+
+                if bullState == 0 and
+                     bullTapped
+
+                    array.set(
+                         bullStates,
+                         i,
+                         1)
+
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             buyColor,
+                             buyTappedTransparency))
+
+
+// ============================================================================
+// 18. BEARISH ZONE LIFECYCLE
+// ============================================================================
+//
+// ACTIVE:
+// Valid zone exists and has not been touched.
+//
+// TAPPED:
+// A FUTURE 5m candle wick touches the zone.
+//
+// BREACHED:
+// A FUTURE 5m candle CLOSES above 0.618.
+//
+// ============================================================================
+
+if array.size(bearBoxes) > 0
+
+    for i = 0 to array.size(bearBoxes) - 1
+
+        bearState =
+             array.get(
+                 bearStates,
+                 i)
+
+
+        bearCreatedTime =
+             array.get(
+                 bearCreatedTimes,
+                 i)
+
+
+        // --------------------------------------------------------------------
+        // ONLY FUTURE 5M CANDLES
+        // --------------------------------------------------------------------
+
+        if bearState != 2 and
+             time5 > bearCreatedTime
+
+            zone50 =
+                 array.get(
+                     bear50Array,
+                     i)
+
+
+            zone618 =
+                 array.get(
+                     bear618Array,
+                     i)
+
+
+            currentBox =
+                 array.get(
+                     bearBoxes,
+                     i)
+
+
+            // ----------------------------------------------------------------
+            // BREACH CHECK FIRST
+            // ----------------------------------------------------------------
+
+            bearBreached =
+                 close5 > zone618
+
+
+            if bearBreached
+
+                array.set(
+                     bearStates,
+                     i,
+                     2)
+
+
+                // Stop extending rectangle
+
+                box.set_extend(
+                     currentBox,
+                     extend.none)
+
+
+                box.set_right(
+                     currentBox,
+                     time5)
+
+
+                // ------------------------------------------------------------
+                // BREACHED APPEARANCE
+                // ------------------------------------------------------------
+
+                if showBreachedZones
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             sellColor,
+                             breachedTransparency))
+
+
+                    box.set_border_color(
+                         currentBox,
+                         color.new(
+                             sellBorderColor,
+                             85))
+
+
+                else
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             sellColor,
+                             100))
+
+
+                    box.set_border_color(
+                         currentBox,
+                         color.new(
+                             sellBorderColor,
+                             100))
+
+
+            else
+
+                // ------------------------------------------------------------
+                // TAP CHECK
+                //
+                // WICK IS ENOUGH.
+                // ------------------------------------------------------------
+
+                bearTapped =
+                     high5 >= zone50 and
+                     low5 <= zone618
+
+
+                if bearState == 0 and
+                     bearTapped
+
+                    array.set(
+                         bearStates,
+                         i,
+                         1)
+
+
+                    box.set_bgcolor(
+                         currentBox,
+                         color.new(
+                             sellColor,
+                             sellTappedTransparency))
+
+
